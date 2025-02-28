@@ -52,7 +52,7 @@ if ($Horde -and $HordeInfo -eq "{}") {
 
 $koboldParams = @(
     "--model",
-    "$($Models[$chosenModel - 1].FullName)"
+    "`"$($Models[$chosenModel - 1].FullName)`""
 )
 
 if ($ContextLength -ne 2048) {
@@ -83,7 +83,7 @@ if ($Horde -and $HordeInfo -ne "{}") {
     
     $koboldParams += @(
         "--hordemodelname",
-        $modelName,
+        "`"${modelName}`"",
         "--hordeworkername",
         $horde_json.workername,
         "--hordekey",
@@ -96,7 +96,8 @@ if ($Quiet) {
 }
 
 # wt --window 0 -p "Windows Terminal" "$pwd\koboldcpp.exe" @koboldParams
-Start-Process Powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command .\koboldcpp.exe @koboldParams"
+Write-Host @koboldParams
+Start-Process -FilePath "koboldcpp.exe" -ArgumentList $koboldParams
 
 if ($webhookUrl -eq "" -and $webhookFormat -ne "") {
 		Write-Host "A webhook format is set but the webhook URL is not."
