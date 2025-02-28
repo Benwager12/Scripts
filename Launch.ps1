@@ -1,11 +1,11 @@
 Param (
-	[switch] $SillyTavern,
+    [switch] $SillyTavern,
     [switch] $Quiet,
     [int] $DebugMode=0,
     [int] $ContextLength=2048,
 		
     [string] $webhookUrl="",
-	[string] $webhookFormat="",
+    [string] $webhookFormat="",
 
     [string] $HordeInfo="{}",
 
@@ -95,8 +95,8 @@ if ($Quiet) {
     $koboldParams += "--quiet"
 }
 
-wt --window 0 -p "Windows Terminal" "$pwd\koboldcpp.exe" @koboldParams
-
+# wt --window 0 -p "Windows Terminal" "$pwd\koboldcpp.exe" @koboldParams
+Start-Process Powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command .\koboldcpp.exe @koboldParams"
 
 if ($webhookUrl -eq "" -and $webhookFormat -ne "") {
 		Write-Host "A webhook format is set but the webhook URL is not."
@@ -123,5 +123,6 @@ if (!$webhookUrl -eq "") {
 }
 
 if ($SillyTavern) {
-    wt --window 0 -p "Windows Terminal" "$pwd\SillyTavern\UpdateAndStart.bat"
+    #wt --window 0 -p "Windows Terminal" "$pwd\SillyTavern\UpdateAndStart.bat"
+    Start-Process Powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command .\SillyTavern\UpdateAndStart.bat"
 }
