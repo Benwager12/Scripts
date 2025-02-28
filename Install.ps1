@@ -134,10 +134,9 @@ if ($installLaunch -eq "Y" -or $installLaunch -eq "y" -or $installLaunch -eq "")
         Invoke-WebRequest -URI $launchScriptURL -OutFile "$aiPath\Launch.ps1" -UseBasicParsing
 
         # Make launch batch file
-        $LaunchBatContents = "Powershell.exe -ExecutionPolicy Bypass -File `".\Launch.ps1`""
+        $LaunchBatContents = "@echo off`nPowershell.exe -ExecutionPolicy Bypass -File `".\Launch.ps1`""
         $ignored = New-Item -Path "$aiPath\Launch.bat" -ItemType File -Value $LaunchBatContents
     } catch {
         Write-Host "Failed to download Launch script, please try again later." -ForegroundColor Red
     }
 }
-
