@@ -1,129 +1,161 @@
-Param (
-    [switch] $SillyTavern,
-    [switch] $Quiet,
-    [int] $DebugMode=0,
-    [int] $ContextLength=2048,
-		
-    [string] $webhookUrl="",
-    [string] $webhookFormat="",
+# Install winget for user
+function InstallWinget {
+    $API_URL = "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
+    $DOWNLOAD_URL = $(Invoke-RestMethod $API_URL).assets.browser_download_url |
+    Where-Object {$_.EndsWith(".msixbundle")}
 
-    [string] $HordeInfo="{}",
-
-    [string] $Model
-)
-
-$Horde = $HordeInfo -ne "{}"
-$Models = Get-ChildItem -Path .\Models | Where-Object {! $_.PSIsContainer}
-
-if ($Horde) {
-    Write-Host "Horde mode enabled."
+    try {
+        Invoke-WebRequest -URI $DOWNLOAD_URL -OutFile winget.msixbundle -UseBasicParsing
+    } catch {
+        Write-Host "Failed to download Winget, please try again later." -ForegroundColor Red
+        exit
+    }
+    Add-AppxPackage winget.msixbundle
+    Remove-Item winget.msixbundle
 }
 
-if ($Models.Count -eq 0) {
-    Write-Host "No models found in the Models folder."
-    Start-Sleep -Seconds 3
+function GetNodeVersion {
+    try {
+        $nodeVersion = node -v
+    } catch {
+        throw "0"
+    }
+    if ($nodeVersion.StartsWith("v")) {
+        $nodeVersion = $nodeVersion.Substring(1)
+    }
+    $nodeVersion = $nodeVersion.Split(".")[0]
+    return [decimal]$nodeVersion
+}
+
+function TestWindowsTerminal {
+    try {
+        $wtVersion = wt nt "echo Hi"
+        return $null -ne $wtVersion
+    } catch {
+        return $false
+    }
+}
+
+function IsGitInstalled {
+    $gitVersion = git --version
+    return $null -ne $gitVersion
+}
+
+# Choose directory to install AI
+$installDir = Read-Host "Enter the directory where the AI folder will be (default is $pwd)"
+if ($installDir -eq "") {
+    $installDir = $pwd
+}
+
+if (-not (Test-Path $installDir)) {
+    Write-Host "Directory does not exist" -ForegroundColor Red
     exit
 }
 
+# Ask user what they'd like their AI directory to be called
+$aiDir = Read-Host "Enter the name of the AI directory (default is AI)"
+if ($aiDir -eq "") {
+    $aiDir = "AI"
+}
 
-$chosenModel = 1
-
-if ($Models.Count -gt 1) {
-    Write-Output "================================================="
-    for ($modelIndex = 1; $modelIndex -le $Models.Count; $modelIndex++) {
-        Write-Host "$($modelIndex). $($Models[$modelIndex - 1].BaseName)"
-    }
-    Write-Host "================================================="
-    $chosenModel = Read-Host "Choose a model"
-    if ($chosenModel -lt 1 -or $chosenModel -gt $Models.Count) {
-        Write-Host "Invalid model choice."
-        Start-Sleep -Seconds 3
+# Create the AI directory if it doesn't exist
+$aiPath = Join-Path $installDir $aiDir
+if (-not (Test-Path $aiPath)) {
+    $ignored = New-Item -Path $aiPath -ItemType Directory
+} else {
+    Write-Host "AI directory already exists" -ForegroundColor Yellow
+    $itemsInDirectory = Get-ChildItem $aiPath | Measure-Object
+    if ($itemsInDirectory.Count -gt 0) {
+        Write-Host "AI directory is not empty" -ForegroundColor Red
         exit
     }
 }
 
-Write-Host "Launching model $($Models[$chosenModel - 1].BaseName)."
-
-if ($Horde -and $HordeInfo -eq "{}") {
-    Write-Host "Horde info is empty."
-    Start-Sleep -Seconds 3
-    exit
-}
-
-$koboldParams = @(
-    "--model",
-    "`"$($Models[$chosenModel - 1].FullName)`""
-)
-
-if ($ContextLength -ne 2048) {
-    $koboldParams += "--contextlength"
-    $koboldParams += $ContextLength
-}
-
-if ($DebugMode) {
-    $koboldParams += "--debug"
-}
-
-if ($Horde -and $HordeInfo -ne "{}") {
-    $horde_json = $HordeInfo | ConvertFrom-Json
-    if ($null -eq $horde_json) {
-        Write-Host "Invalid horde info."
-        Start-Sleep -Seconds 3
+# Check if the user has winget installed, if not, download and install it
+try {
+    $wingetVersion = winget --version
+    Write-Host "Winget is installed, version is $wingetVersion" -ForegroundColor Green
+} catch {
+    # Prompt the user if they want to install Winget, if not, exit
+    $installWinget = Read-Host "Winget is not installed, would you like to install it? (Y/N)"
+    if ($installWinget -eq "Y" -or $installWinget -eq "y" -or $installWinget -eq "") {
+        InstallWinget
+    } else {
         exit
     }
-    # Check if horde_info contains values for workername and key
-    if ($null -eq $horde_json.workername -or $null -eq $horde_json.key) {
-        Write-Host "Invalid horde info. (Needs workername and key)"
-        Start-Sleep -Seconds 3
+    Write-Host "Winget has been installed, version is $(winget --version)" -ForegroundColor Green
+}
+
+# Install nodejs version is less than 18
+if ((GetNodeVersion) -lt 18) {
+    $installNodeJS = Read-Host "Node.js is not installed, would you like to install it? (Y/N)"
+    if ($installNodeJS -eq "Y" -or $installNodeJS -eq "y" -or $installNodeJS -eq "") {
+        winget install -e --id Node.NodeJS
+    } else {
         exit
     }
-
-    $modelName = $Models[$chosenModel - 1].BaseName -replace "(.*)([-|\.]Q\d.*)", '$1'
-    $modelName = $modelName.replace("-", " ")
-    
-    $koboldParams += @(
-        "--hordemodelname",
-        "`"${modelName}`"",
-        "--hordeworkername",
-        $horde_json.workername,
-        "--hordekey",
-        $horde_json.key
-    )
+} else {
+    Write-Host "Node.js is installed and the version is 18 or higher." -ForegroundColor Green
 }
 
-if ($Quiet) {
-    $koboldParams += "--quiet"
+# Install git if not installed
+if (!(IsGitInstalled)) {
+    $installGit = Read-Host "Git is not installed, would you like to install it? (Y/N)"
+    if ($installGit -eq "Y" -or $installGit -eq "y" -or $installGit -eq "") {
+        winget install -e --id Git.Git
+    } else {
+        exit
+    }
+} else {
+    Write-Host "Git is installed." -ForegroundColor Green
 }
 
-# wt --window 0 -p "Windows Terminal" "$pwd\koboldcpp.exe" @koboldParams
-Write-Host @koboldParams
-Start-Process -FilePath "koboldcpp.exe" -ArgumentList $koboldParams
-
-if ($webhookUrl -eq "" -and $webhookFormat -ne "") {
-		Write-Host "A webhook format is set but the webhook URL is not."
-		Start-Sleep -Seconds 3
-		exit
+# Install Kobold into AI directory
+Write-Host "Installing Kobold into directory"
+$koboldUrl = "https://github.com/LostRuins/koboldcpp/releases/latest/download/koboldcpp.exe"
+try {
+    Invoke-WebRequest -URI $koboldUrl -OutFile "$aiPath\koboldcpp.exe"
+} catch {
+    Write-Host "Failed to download Kobold, please try again later." -ForegroundColor Red
 }
 
-if ($webhookUrl -ne "" -and $webhookFormat -eq "") {
-		Write-Host "A webhook URL is set but the format is not."
-		Start-Sleep -Seconds 3
-		exit
+# Make a model directory in AI directory
+$modelPath = Join-Path $aiPath "Models"
+try {
+    $ignored = New-Item -Path $modelPath -ItemType Directory
+    Start-Sleep -Seconds 1
+} catch {
+    Write-Host "Failed to create Models directory" -ForegroundColor Red
 }
 
-if (!$webhookUrl -eq "") {
-	if ($webhookFormat -Match "{ngrok}") {
-		$response = Invoke-RestMethod -Uri "http://127.0.0.1:4040/api/tunnels"
-		$webhookFormat.replace("{ngrok}", $response.tunnels.public_url)
-	}
-	if ($webhookFormat -Match "{local_ip}") {
-		$MyIP=(Get-NetIPAddress | Where-Object {$_.AddressState -eq "Preferred" -and $_.ValidLifetime -lt "24:00:00"}).IPAddress
-		$webhookFormat.replace("{local_ip}", $MyIP)
-	}
-    Invoke-RestMethod -Uri $WebhookUrl -Method Post -ContentType "application/json" -Body (@{content = $webhookFormat})
+# Clone sillytavern
+Write-Host "Cloning SillyTavern into directory"
+try {
+    git clone "https://github.com/SillyTavern/SillyTavern" "$aiPath\SillyTavern"
+} catch {
+    Write-Host "Failed to clone SillyTavern, please try again later." -ForegroundColor Red
 }
 
-if ($SillyTavern) {
-    #wt --window 0 -p "Windows Terminal" "$pwd\SillyTavern\UpdateAndStart.bat"
-    Start-Process Powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command .\SillyTavern\UpdateAndStart.bat"
+# Ask user if they would like to install launch script
+$InstallLaunch = Read-Host "Would you like to install the launch script? (Y/N)"
+if ($InstallLaunch -eq "Y" -or $InstallLaunch -eq "y" -or $InstallLaunch -eq "") {
+    $launchScriptURL = "https://missingember.info/Scripts/Launch.ps1"
+    try {
+        Invoke-WebRequest -URI $launchScriptURL -OutFile "$aiPath\Launch.ps1" -UseBasicParsing
+
+        # Make launch batch file
+        $LaunchBatContents = "@echo off`nPowershell.exe -ExecutionPolicy Bypass -File `".\Launch.ps1`""
+        $ignored = New-Item -Path "$aiPath\Launch.bat" -ItemType File -Value $LaunchBatContents
+    } catch {
+        Write-Host "Failed to download Launch script, please try again later." -ForegroundColor Red
+    }
+}
+
+Write-Host "Installation complete" -ForegroundColor Green
+Write-Host "Now what's recommended is to install a model, you can do this by placing the model in the Models directory in the AI directory."
+
+# Ask user if they would like to install a model
+$OpenModelPage = Read-Host "Would you like to open the download page for the current recommended model? (Y/N)"
+if ($OpenModelPage -eq "Y" -or $OpenModelPage -eq "y" -or $OpenModelPage -eq "") {
+    Start-Process "https://missingember.info/Models"
 }
