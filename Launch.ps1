@@ -18,7 +18,7 @@ function GetNodeVersion {
     try {
         $nodeVersion = node -v
     } catch {
-        throw "0"
+        return "0"
     }
     if ($nodeVersion.StartsWith("v")) {
         $nodeVersion = $nodeVersion.Substring(1)
